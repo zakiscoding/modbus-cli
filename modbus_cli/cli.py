@@ -46,19 +46,33 @@ def _make_client(host, port, serial, baudrate, slave_id, timeout):
     return client
 
 
-def _read_registers(client, reg_type, address, count, slave):
-    """Read registers by type."""
+def _read_registers(client, reg_type, address, count, slave, silent=False):
+    """Read registers by type. If silent=True, return None on error instead of exiting."""
     readers = {
         "holding": client.read_holding_registers,
         "input": client.read_input_registers,
         "coil": client.read_coils,
         "discrete": client.read_discrete_inputs,
     }
-    resp = readers[reg_type](address, count=count, slave=slave)
+    resp = readers[reg_type](address, count=count, **_slave_kwarg(slave))
     if resp.isError():
+        if silent:
+            return None
         error_panel(f"Modbus error: {resp}")
         sys.exit(1)
     return resp
+
+
+def _slave_kwarg(slave_id: int) -> dict:
+    """Return the correct keyword arg for the installed pymodbus version.
+
+    pymodbus <3.7 uses 'slave', >=3.7 uses 'device_id'.
+    """
+    import pymodbus
+    major, minor = (int(x) for x in pymodbus.__version__.split(".")[:2])
+    if major >= 4 or (major == 3 and minor >= 7):
+        return {"device_id": slave_id}
+    return {"slave": slave_id}
 
 
 def _format_value(value, fmt):
@@ -230,16 +244,17 @@ def write(host, address, values, port, serial, baudrate, slave, reg_type, timeou
     connection_header(target, detected_type, slave)
 
     try:
+        skw = _slave_kwarg(slave)
         if detected_type == "coil":
             if len(values) == 1:
-                resp = client.write_coil(raw_address, bool(values[0]), slave=slave)
+                resp = client.write_coil(raw_address, bool(values[0]), **skw)
             else:
-                resp = client.write_coils(raw_address, [bool(v) for v in values], slave=slave)
+                resp = client.write_coils(raw_address, [bool(v) for v in values], **skw)
         else:
             if len(values) == 1:
-                resp = client.write_register(raw_address, values[0], slave=slave)
+                resp = client.write_register(raw_address, values[0], **skw)
             else:
-                resp = client.write_registers(raw_address, list(values), slave=slave)
+                resp = client.write_registers(raw_address, list(values), **skw)
 
         if resp.isError():
             error_panel(f"Modbus error: {resp}")
@@ -307,8 +322,8 @@ def scan(host, port, serial, baudrate, scan_range, register, timeout):
             progress.update(task, advance=1, current_id=slave_id)
             try:
                 client = _make_client(host, port, serial, baudrate, slave_id, timeout)
-                resp = _read_registers(client, reg_type, raw_address, 1, slave_id)
-                if not resp.isError():
+                resp = _read_registers(client, reg_type, raw_address, 1, slave_id, silent=True)
+                if resp is not None:
                     val = resp.bits[0] if reg_type in ("coil", "discrete") else resp.registers[0]
                     found.append((slave_id, val))
                     progress.console.print(
@@ -316,7 +331,7 @@ def scan(host, port, serial, baudrate, scan_range, register, timeout):
                         f"[dim]register {register} = {val}[/]"
                     )
                 client.close()
-            except (SystemExit, Exception):
+            except Exception:
                 try:
                     client.close()
                 except Exception:

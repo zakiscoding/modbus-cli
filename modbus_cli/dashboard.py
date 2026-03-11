@@ -277,6 +277,14 @@ class ModbusDashboard(App):
             return str(value - 65536 if value > 32767 else value)
         return str(value)
 
+    def _slave_kwarg(self) -> dict:
+        """Return correct kwarg for installed pymodbus version."""
+        import pymodbus
+        major, minor = (int(x) for x in pymodbus.__version__.split(".")[:2])
+        if major >= 4 or (major == 3 and minor >= 7):
+            return {"device_id": self.slave}
+        return {"slave": self.slave}
+
     def _poll(self):
         if self.paused or self.client is None:
             return
@@ -289,7 +297,7 @@ class ModbusDashboard(App):
                 "discrete": self.client.read_discrete_inputs,
             }
             resp = readers[self.reg_type](
-                self.raw_address, count=self.count, slave=self.slave,
+                self.raw_address, count=self.count, **self._slave_kwarg(),
             )
             if resp.isError():
                 return
