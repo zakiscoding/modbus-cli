@@ -1,26 +1,50 @@
 # modbus-cli
 
+```
+               _                   _ _
+  _ __  ___  __| |__ _  _ ___  __ _| (_)
+ | '  \/ _ \/ _` / _` || (_-< / _| | | |
+ |_|_|_\___/\__,_\__,_|\_/__/ \__|_|_|_|
+```
+
 **Like curl, but for Modbus.**
 
-A dead-simple command-line tool for reading and writing Modbus TCP and RTU registers. No GUI, no config files, no bloat. Just connect and query.
+A dead-simple command-line tool for reading and writing Modbus TCP and RTU registers. Beautiful terminal UI. No GUI, no config files, no bloat.
 
 ```bash
 pip install modbus-cli
 ```
 
-```
-$ modbus read 192.168.1.10 40001 --count 5
+<!-- TODO: Replace with actual terminal recording -->
+<!-- ![demo](docs/demo.gif) -->
 
-  Modbus holding registers @ 192.168.1.10
- ┏━━━━━━━━━┳━━━━━━┳━━━━━━━┓
- ┃ Address ┃  Raw ┃ Value ┃
- ┡━━━━━━━━━╇━━━━━━╇━━━━━━━┩
- │   40001 │  237 │   237 │
- │   40002 │ 1024 │  1024 │
- │   40003 │   58 │    58 │
- │   40004 │  900 │   900 │
- │   40005 │    0 │     0 │
- └─────────┴──────┴───────┘
+## Features
+
+- **Styled output** -- color-coded panels, value bars, gradient theme
+- **Live dashboard** -- full-screen TUI with sparkline history, change detection, and keybindings (powered by [Textual](https://github.com/Textualize/textual))
+- **Smart addressing** -- auto-detects register type from standard Modbus notation (40001 = holding, 30001 = input, etc.)
+- **TCP + Serial RTU** -- works with network devices and serial RS485 buses
+- **Multiple formats** -- decimal, hex, binary, signed 16-bit
+- **Progress bars** -- animated scan and dump with real-time feedback
+- **CSV export** -- dump register maps straight to file
+
+## Quick Start
+
+```bash
+# Read 5 holding registers
+modbus read 192.168.1.10 40001 --count 5
+
+# Write a value
+modbus write 192.168.1.10 40001 1234
+
+# Scan for devices on the bus
+modbus scan 192.168.1.10 --range 1-10
+
+# Open live monitoring dashboard
+modbus watch 192.168.1.10 40001 --count 8
+
+# Dump 200 registers to CSV
+modbus dump 192.168.1.10 40001 40200 --csv registers.csv
 ```
 
 ## Why?
@@ -50,7 +74,7 @@ Requires Python 3.8+. No binary dependencies. Works on Linux, macOS, and Windows
 # Read a single holding register
 modbus read 192.168.1.10 40001
 
-# Read 10 holding registers
+# Read 10 holding registers with value bars
 modbus read 192.168.1.10 40001 --count 10
 
 # Read input registers in hex
@@ -65,6 +89,8 @@ modbus read --serial /dev/ttyUSB0 40001 --slave 2 --baudrate 19200
 # Signed 16-bit values
 modbus read 192.168.1.10 40001 -c 5 -f signed
 ```
+
+Output includes styled panels, connection status, and visual value bars showing register magnitude at a glance.
 
 **Address notation:** Uses standard Modbus addressing. `40001`-`49999` = holding registers, `30001`-`39999` = input registers, `10001`-`19999` = discrete inputs, `1`-`9999` = coils. Or pass raw 0-based addresses with `--type`.
 
@@ -84,7 +110,7 @@ modbus write 192.168.1.10 1 1 --type coil
 ### `modbus scan` -- Find active devices
 
 ```bash
-# Scan all slave IDs (1-247)
+# Scan all slave IDs (1-247) with animated progress bar
 modbus scan 192.168.1.10
 
 # Scan a specific range
@@ -94,29 +120,48 @@ modbus scan 192.168.1.10 --range 1-10
 modbus scan --serial /dev/ttyUSB0 --range 1-50
 ```
 
-### `modbus watch` -- Live-poll registers
+Devices are reported as they're found, with a progress bar showing scan completion.
+
+### `modbus watch` -- Live monitoring dashboard
 
 ```bash
-# Watch 4 registers, update every second
+# Watch 4 registers with full-screen TUI
 modbus watch 192.168.1.10 40001 --count 4
 
 # Watch at 500ms intervals in hex
 modbus watch 192.168.1.10 40001 -c 8 -i 0.5 -f hex
 ```
 
-Shows a live-updating table with change detection. Highlights when values change between polls. Press `Ctrl+C` to stop.
+Opens a full-screen Textual dashboard with:
+
+- **Live data table** with zebra-striped rows
+- **Sparkline history** per register (up to 60 samples)
+- **Change detection** showing deltas between polls
+- **Stats bar** with poll count, change count, and polling rate
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `q` | Quit |
+| `r` | Reset stats and history |
+| `f` | Cycle format (decimal / hex / bin / signed) |
+| `p` | Pause / resume polling |
 
 ### `modbus dump` -- Export register ranges
 
 ```bash
-# Dump 100 registers to terminal
+# Dump 100 registers to terminal with progress bar
 modbus dump 192.168.1.10 40001 40100
 
 # Export to CSV
 modbus dump 192.168.1.10 40001 40200 --csv registers.csv
+
+# Dump in hex format
+modbus dump 192.168.1.10 40001 40200 -f hex
 ```
 
-Reads in chunks of 125 registers (Modbus protocol max). Useful for capturing full register maps.
+Reads in chunks of 125 registers (Modbus protocol max). Shows an animated progress bar for large ranges.
 
 ## Options
 
@@ -160,6 +205,13 @@ modbus dump 192.168.1.10 40001 40050 --csv before.csv
 modbus dump 192.168.1.10 40001 40050 --csv after.csv
 diff before.csv after.csv
 ```
+
+## Built With
+
+- [pymodbus](https://github.com/pymodbus-dev/pymodbus) -- Modbus protocol implementation
+- [Click](https://click.palletsprojects.com/) -- CLI framework
+- [Rich](https://github.com/Textualize/rich) -- Terminal formatting and styled output
+- [Textual](https://github.com/Textualize/textual) -- TUI framework for the watch dashboard
 
 ## Development
 
