@@ -1,10 +1,10 @@
 # modbus-cli
 
 ```
-               _                   _ _
-  _ __  ___  __| |__ _  _ ___  __ _| (_)
- | '  \/ _ \/ _` / _` || (_-< / _| | | |
- |_|_|_\___/\__,_\__,_|\_/__/ \__|_|_|_|
+  __  __  ___  ___  ___  _   _ ___        ___ _    ___
+ |  \/  |/ _ \|   \| _ )| | | / __|  ___ / __| |  |_ _|
+ | |\/| | (_) | |) | _ \| |_| \__ \ |___| (__| |__ | |
+ |_|  |_|\___/|___/|___/ \___/|___/      \___|____|___|
 ```
 
 **Like curl, but for Modbus.**
@@ -87,6 +87,12 @@ modbus read --serial /dev/ttyUSB0 40001 --slave 2 --baudrate 19200
 
 # Signed 16-bit values
 modbus read 192.168.1.10 40001 -c 5 -f signed
+
+# Decode as float32 values (2 registers per float)
+modbus read 192.168.1.10 40001 -c 4 --float
+
+# Adjust byte/word ordering for vendor-specific layouts
+modbus read 192.168.1.10 40001 -c 4 --float --byte-order BE --word-order LE
 ```
 
 Output includes styled panels, connection status, and visual value bars showing register magnitude at a glance.
