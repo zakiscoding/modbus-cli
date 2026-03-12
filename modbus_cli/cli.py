@@ -1,5 +1,6 @@
 """modbus-cli: Like curl, but for Modbus."""
 
+import json
 import sys
 import time
 
@@ -86,6 +87,22 @@ def _format_value(value, fmt):
     return str(value)
 
 
+def _decode_floats(registers, byte_order="BE", word_order="BE"):
+    """Decode pairs of 16-bit registers as 32-bit IEEE 754 floats."""
+    import struct
+    results = []
+    it = iter(registers)
+    for hi, lo in zip(it, it):
+        if word_order == "LE":
+            hi, lo = lo, hi
+        raw = (hi << 16) | lo
+        b = raw.to_bytes(4, byteorder="big")
+        if byte_order == "LE":
+            b = bytes(reversed(b))
+        results.append(struct.unpack(">f", b)[0])
+    return results
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -131,7 +148,11 @@ def cli(ctx):
               type=click.Choice(["decimal", "hex", "bin", "signed"]),
               default="decimal", help="Output format (default: decimal).")
 @click.option("--timeout", default=3.0, help="Timeout in seconds (default: 3).")
-def read(host, address, port, serial, baudrate, slave, count, reg_type, fmt, timeout):
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output results as JSON.")
+@click.option("--float", "as_float", is_flag=True, default=False, help="Decode register pairs as 32-bit IEEE 754 floats.")
+@click.option("--byte-order", default="BE", type=click.Choice(["BE", "LE"]), help="Byte order for float decoding (default: BE).")
+@click.option("--word-order", default="BE", type=click.Choice(["BE", "LE"]), help="Word order for float decoding (default: BE).")
+def read(host, address, port, serial, baudrate, slave, count, reg_type, fmt, timeout, as_json, as_float, byte_order, word_order):
     """Read Modbus registers.
 
     \b
@@ -164,6 +185,36 @@ def read(host, address, port, serial, baudrate, slave, count, reg_type, fmt, tim
         values = resp.bits[:count]
     else:
         values = resp.registers
+
+    if as_float:
+        if len(values) % 2 != 0:
+            from .theme import error_panel
+            error_panel("--float requires an even number of registers (pairs)")
+            sys.exit(1)
+        floats = _decode_floats(list(values), byte_order=byte_order, word_order=word_order)
+        if as_json:
+            pairs = [{"address": address + i * 2, "value": floats[i]} for i in range(len(floats))]
+            print(__import__("json").dumps({"host": host, "type": detected_type, "slave": slave, "float_values": pairs}, indent=2))
+            return
+        from rich.table import Table
+        from rich.panel import Panel
+        ftable = Table(show_header=True, header_style="bold #00d4aa", border_style="#636e72", row_styles=["", "dim"])
+        ftable.add_column("Address", style="bold #7c6ff7", justify="right", min_width=8)
+        ftable.add_column("Float Value", style="bold #00d4aa", justify="right", min_width=14)
+        for i, fval in enumerate(floats):
+            ftable.add_row(str(address + i * 2), f"{fval:.6g}")
+        console.print(Panel(ftable, border_style="#636e72", title="[bold #00d4aa]32-bit floats[/]", padding=(1, 2)))
+        console.print()
+        return
+
+    if as_json:
+        registers = []
+        for i, val in enumerate(values):
+            addr_display = address + i if not reg_type else raw_address + i
+            int_val = int(val)
+            registers.append({"address": addr_display, "raw": int_val, "value": _format_value(int_val, fmt) if not isinstance(val, bool) else str(int_val)})
+        print(__import__("json").dumps({"host": host, "type": detected_type, "slave": slave, "registers": registers}, indent=2))
+        return
 
     table = Table(
         show_header=True,
@@ -283,7 +334,8 @@ def write(host, address, values, port, serial, baudrate, slave, reg_type, timeou
               help="Slave ID range (default: 1-247).")
 @click.option("--register", default=40001, help="Test register (default: 40001).")
 @click.option("--timeout", default=0.5, help="Per-device timeout (default: 0.5).")
-def scan(host, port, serial, baudrate, scan_range, register, timeout):
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output results as JSON.")
+def scan(host, port, serial, baudrate, scan_range, register, timeout, as_json):
     """Scan for active Modbus devices on the bus.
 
     \b
@@ -338,6 +390,10 @@ def scan(host, port, serial, baudrate, scan_range, register, timeout):
                     pass
 
     console.print()
+
+    if as_json:
+        print(__import__("json").dumps({"host": host, "range": scan_range, "register": register, "devices": [{"slave_id": sid, "register_value": val} for sid, val in found]}, indent=2))
+        return
 
     if found:
         table = Table(
@@ -452,7 +508,8 @@ def watch(host, address, port, serial, baudrate, slave, count, reg_type, interva
               default="decimal", help="Output format (default: decimal).")
 @click.option("--csv", "csv_out", default=None, help="Export to CSV file.")
 @click.option("--timeout", default=3.0, help="Timeout in seconds (default: 3).")
-def dump(host, start_address, end_address, port, serial, baudrate, slave, reg_type, fmt, csv_out, timeout):
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output results as JSON.")
+def dump(host, start_address, end_address, port, serial, baudrate, slave, reg_type, fmt, csv_out, timeout, as_json):
     """Dump a range of registers to table or CSV.
 
     \b
@@ -508,6 +565,11 @@ def dump(host, start_address, end_address, port, serial, baudrate, slave, reg_ty
                 progress.update(task, advance=n, regs_done=offset)
     finally:
         client.close()
+
+    if as_json:
+        registers = [{"address": start_address + i, "raw": val, "value": _format_value(val, fmt)} for i, val in enumerate(all_values)]
+        print(__import__("json").dumps({"host": host, "type": detected_start, "slave": slave, "registers": registers}, indent=2))
+        return
 
     if csv_out:
         import csv
